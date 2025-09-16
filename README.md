@@ -1,66 +1,37 @@
-## Foundry
+# Critical Vulnerability in LSDChainlinkOracle: Price Manipulation via User-Supplied Oracles
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This repository contains a minimal, verifiable Proof of Concept (PoC) demonstrating a critical-severity vulnerability in the `LSDChainlinkOracle.sol` contract.
 
-Foundry consists of:
+The vulnerability allows any user to supply their own malicious oracle addresses, giving them complete control over the price returned by the contract. This flaw can be exploited to cause a **total loss of funds** in any protocol that relies on this oracle for financial calculations, such as a lending market or a decentralized exchange.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+---
 
-## Documentation
+## The Vulnerability Explained: A Plain-English Analogy
 
-https://book.getfoundry.sh/
+The `LSDChainlinkOracle` contract is supposed to act like a trusted bank teller who can tell you the price of an asset.
 
-## Usage
+-   **The Secure Way:** A bank teller verifies your identity by checking your ID against the bank's own, trusted, internal computer system.
+-   **The Vulnerable Way (How this contract works):** This contract acts like a bank teller who asks you, "To verify your identity, which computer system would you like me to use?"
 
-### Build
+An attacker can simply point the contract to their own fake data source, and the contract is forced to believe it.
 
-```shell
-$ forge build
-```
+## Technical Details
 
-### Test
+The `getPrice` function does not use hardcoded, trusted oracle addresses. Instead, it decodes the oracle addresses from a user-supplied `bytes memory data` parameter on every call.
 
-```shell
-$ forge test
-```
+**File:** `src/LSDChainlinkOracle.sol`
+**Vulnerable Code Pattern:**
+```solidity
+function getPrice(..., bytes memory data) external view returns (uint256) {
+    (
+        address ethChainlinkOracle,   // <-- Attacker-controlled
+        uint256 ethTimeout,
+        address xEthChainlinkOracle,  // <-- Attacker-controlled
+        uint256 xEthTimeout
+    ) = abi.decode(data, (address, uint256, address, uint256));
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+    // The contract then makes calls to these attacker-controlled addresses.
+    uint256 xEthEthPrice = LibChainlinkOracle.getTokenPrice(xEthChainlinkOracle, ...);
+    uint256 ethUsdPrice = LibChainlinkOracle.getTokenPrice(ethChainlinkOracle, ...);
+    // ...
+}
